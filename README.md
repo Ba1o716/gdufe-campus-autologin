@@ -41,10 +41,10 @@ Windows 上的**开机自动登录校园网**小工具。开机后它会：
 想先测一下：`python campus_login_main.py --login`，然后看日志。
 
 > 不想装 Python 也能用：双击 `build_exe.bat` 打包出 `CampusLogin.exe`（需要一个能联网的环境装 PyInstaller）。
->powershell里面输入：python -m pip install pyinstaller 
->然后cd <安装目录> 
->输入python -m PyInstaller --clean --noconfirm CampusLogin.spec 
->exe程序会出现在dist文件夹里面
+> powershell里面输入：python -m pip install pyinstaller 
+> 然后cd <安装目录> 
+> 输入python -m PyInstaller --clean --noconfirm CampusLogin.spec 
+> exe程序会出现在dist文件夹里面
 ---
 
 ## 0. 当前状态（重要，先看这里）
