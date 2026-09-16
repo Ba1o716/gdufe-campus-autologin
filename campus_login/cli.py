@@ -123,6 +123,38 @@ def _virtual_adapter_hint() -> list[str]:
         return []
 
 
+def _local_ip_hint(config: Config) -> tuple[str, str]:
+    """返回 (本机校园网 IP, 说明文本)，也就是登录时填进 wlan_user_ip 的那个地址。"""
+    from urllib.parse import urlsplit
+
+    from .network import local_ipv4_prefer_physical
+
+    host = ""
+    for url in (config.login_url, config.portal_url):
+        if url:
+            try:
+                host = urlsplit(url).hostname or ""
+            except ValueError:
+                host = ""
+            if host:
+                break
+    address = local_ipv4_prefer_physical(host)
+    if not address:
+        return "", "未获取到（网卡可能还没就绪）"
+    adapter_name = ""
+    try:
+        from .winiface import list_interfaces
+
+        for item in list_interfaces():
+            if address in item.addresses:
+                adapter_name = item.name
+                break
+    except Exception:
+        adapter_name = ""
+    text = f"{address}（网卡：{adapter_name}）" if adapter_name else address
+    return address, text
+
+
 def cmd_status(args, config: Config, store) -> int:
     session = build_session(config)
     state = check_authentication(config, session=session)
@@ -135,6 +167,7 @@ def cmd_status(args, config: Config, store) -> int:
     credential_saved = bool(credential and credential.complete)
 
     if args.json:
+        local_ip, _ = _local_ip_hint(config)
         print(
             json.dumps(
                 {
@@ -149,6 +182,7 @@ def cmd_status(args, config: Config, store) -> int:
                     "credential_saved": credential_saved,
                     "credential_backend": store.name,
                     "autostart": autostart_installed,
+                    "local_ip": local_ip,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -163,6 +197,8 @@ def cmd_status(args, config: Config, store) -> int:
             f"凭据存储：{store.name}（{'已保存账号密码' if credential_saved else '尚未保存账号密码'}）"
         )
         print(f"开机自动运行：{'已开启' if autostart_installed else '未开启'}")
+        _, local_hint = _local_ip_hint(config)
+        print(f"本机校园网 IP（登录时填进 wlan_user_ip）：{local_hint}")
         virtual = _virtual_adapter_hint()
         if virtual:
             print(

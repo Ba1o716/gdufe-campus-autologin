@@ -91,6 +91,29 @@ class LocalNetworkTest(TempDataDirTestCase):
             self.assertIsNotNone(picked)
             self.assertFalse(is_virtual_ipv4(picked))
 
+    def test_picks_wifi_adapter_when_only_wifi_is_connected(self):
+        """只有 Wi-Fi 连着时（笔记本常见），应当取 Wi-Fi 网卡的地址。"""
+        import campus_login.network as network_module
+        import campus_login.winiface as winiface_module
+        from campus_login.winiface import Interface
+
+        original_interfaces = winiface_module.list_interfaces
+        original_source = network_module._source_ipv4_towards
+        winiface_module.list_interfaces = lambda: [
+            Interface(index=57, name="TUN", description="proxy", addresses=["198.18.0.1"], if_type=53, up=True),
+            Interface(index=12, name="以太网", description="ethernet", addresses=["169.254.10.10"], if_type=6, up=False),
+            Interface(index=2, name="WLAN", description="wifi", addresses=["10.114.107.215"], if_type=71, up=True),
+        ]
+        # 默认路由被 TUN 抢走
+        network_module._source_ipv4_towards = lambda host, port=80: "198.18.0.1"
+        try:
+            self.assertEqual(
+                network_module.local_ipv4_prefer_physical("100.64.13.17"), "10.114.107.215"
+            )
+        finally:
+            winiface_module.list_interfaces = original_interfaces
+            network_module._source_ipv4_towards = original_source
+
     def test_local_ipv4_does_not_raise(self):
         value = local_ipv4()
         self.assertTrue(value is None or isinstance(value, str))
