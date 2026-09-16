@@ -1,0 +1,9 @@
+# 运行依赖（Windows 10/11 + Python 3.9 及以上）
+# 说明：核心功能只用到 Python 标准库（ctypes / tkinter / logging / http）和 requests。
+requests>=2.25
+
+# ---------------------------------------------------------------------------
+# 可选依赖（不装也能正常使用）
+# ---------------------------------------------------------------------------
+# Pillow        仅在你需要重新生成图标（tools/make_icon.py）时使用
+# pyinstaller   仅在你需要打包成 CampusLogin.exe 时使用：pip install pyinstaller
