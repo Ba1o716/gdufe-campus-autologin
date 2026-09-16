@@ -38,7 +38,25 @@ def resource_root() -> Path:
 
 
 def icon_path() -> Path:
-    return resource_root() / "assets" / "tray.ico"
+    """托盘图标文件位置。
+
+    打包（PyInstaller）后资源可能被放在 _MEIPASS 根目录，也可能保留
+    campus_login/assets 这层目录，所以这里把几种常见位置都试一遍，
+    避免“打包后托盘图标变成系统默认图标”这类问题。
+    """
+    root = resource_root()
+    candidates = [
+        root / "assets" / "tray.ico",
+        root / "campus_login" / "assets" / "tray.ico",
+        Path(__file__).resolve().parent / "assets" / "tray.ico",
+    ]
+    for candidate in candidates:
+        try:
+            if candidate.exists():
+                return candidate
+        except OSError:
+            continue
+    return candidates[0]
 
 
 def launcher_script() -> Path:

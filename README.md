@@ -41,11 +41,10 @@ Windows 上的**开机自动登录校园网**小工具。开机后它会：
 想先测一下：`python campus_login_main.py --login`，然后看日志。
 
 > 不想装 Python 也能用：双击 `build_exe.bat` 打包出 `CampusLogin.exe`（需要一个能联网的环境装 PyInstaller）。
-  powershell里面输入：python -m pip install pyinstaller
-            然后cd <安装目录>
-            输入python -m PyInstaller --clean --noconfirm CampusLogin.spec
-  exe程序会出现在dist文件夹里面
-
+>powershell里面输入：python -m pip install pyinstaller 
+>然后cd <安装目录> 
+>输入python -m PyInstaller --clean --noconfirm CampusLogin.spec 
+>exe程序会出现在dist文件夹里面
 ---
 
 ## 0. 当前状态（重要，先看这里）
@@ -203,6 +202,24 @@ CampusLogin/
 * `dist\CampusLoginCLI.exe` —— 带控制台窗口，方便用 `--status`、`--login` 等命令。
 
 打包依赖 PyInstaller（只有打包时需要联网安装），运行 EXE 的电脑**不需要** Python。
+
+### 4.3 不想用 .bat？直接用命令行
+
+`.bat` 里的每一行都对应一条命令，遇到杀毒软件拦截、编码乱码或双击没反应时，
+直接在 PowerShell 里执行等价命令即可：
+
+| 想做的事 | 命令行 |
+| --- | --- |
+| 安装（依赖 + 开机自启 + 打开设置） | `pip install -r requirements.txt`<br>`python campus_login_main.py --install`<br>`python campus_login_main.py --settings` |
+| 立即启动（托盘后台） | `pythonw campus_login_main.py --tray` |
+| 打包 EXE | `pip install pyinstaller`<br>`python -m PyInstaller --clean --noconfirm CampusLogin.spec` |
+| 取消开机自启 | `python campus_login_main.py --uninstall` |
+| 关闭后台程序 | `python campus_login_main.py --quit` |
+
+> 小提示：打包 EXE 时如果提示 "Python 3.14 is not supported"，说明 PyInstaller 还没
+> 支持你装的这个 Python 版本，装一个 Python 3.12 再打包即可（或用 `py -3.12 -m PyInstaller ...`）。
+> 只发源码也能正常使用，不影响功能。
+
 
 ---
 
@@ -697,5 +714,6 @@ python campus_login_main.py --selftest      # 20 秒内跑完的离线自检（1
 2. 如果学校启用了验证码 / 短信验证 / 二次认证，程序只会提示人工处理（不会去绕过）。
 3. 如果学校有"认证状态查询"接口，填到「认证状态检测地址」会比通用的 204 探测更准确。
 
-如果有问题欢迎提问
+如果有问题欢迎咨询
 个人wx：zyffwazqs
+本程序由codex+deepseek v4 flash & 本人测试调整生成，理性看待

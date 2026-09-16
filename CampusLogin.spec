@@ -15,6 +15,8 @@ a = Analysis(
     pathex=[str(project_dir)],
     binaries=[],
     datas=[
+        # 托盘图标：确保运行时的 icon_path() 能找到（同时放两份，路径最保险）
+        (str(icon), "assets"),
         (str(icon), "campus_login/assets"),
     ],
     hiddenimports=[

@@ -66,3 +66,42 @@ class LoggingFallbackTest(TempDataDirTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IconPathTest(TempDataDirTestCase):
+    """打包后托盘图标路径必须能找到（否则托盘会显示成系统默认图标）。"""
+
+    def test_source_layout(self):
+        from campus_login.paths import icon_path
+
+        path = icon_path()
+        self.assertEqual(path.name, "tray.ico")
+        self.assertTrue(path.exists(), f"源码运行时应当能找到图标：{path}")
+
+    def test_frozen_layout_assets_at_root(self):
+        import campus_login.paths as paths_module
+
+        root = self.data_dir / "meipass-root"
+        (root / "assets").mkdir(parents=True)
+        (root / "assets" / "tray.ico").write_bytes(b"icon")
+        original = paths_module.resource_root
+        paths_module.resource_root = lambda: root
+        try:
+            self.assertEqual(paths_module.icon_path(), root / "assets" / "tray.ico")
+        finally:
+            paths_module.resource_root = original
+
+    def test_frozen_layout_inside_package(self):
+        import campus_login.paths as paths_module
+
+        root = self.data_dir / "meipass-pkg"
+        (root / "campus_login" / "assets").mkdir(parents=True)
+        (root / "campus_login" / "assets" / "tray.ico").write_bytes(b"icon")
+        original = paths_module.resource_root
+        paths_module.resource_root = lambda: root
+        try:
+            self.assertEqual(
+                paths_module.icon_path(), root / "campus_login" / "assets" / "tray.ico"
+            )
+        finally:
+            paths_module.resource_root = original

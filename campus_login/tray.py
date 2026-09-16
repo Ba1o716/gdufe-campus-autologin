@@ -242,6 +242,10 @@ class TrayIcon:
             if handle:
                 self._owns_icon = True
                 return handle
+            log.warning("托盘图标文件存在但加载失败（%s），改用系统默认图标", self.icon_file)
+        else:
+            # 这条日志能帮上大忙：打包后如果图标路径不对，托盘就会显示系统默认图标
+            log.warning("未找到托盘图标文件（%s），改用系统默认图标", self.icon_file)
         return user32.LoadIconW(None, ctypes.c_wchar_p(IDI_APPLICATION))
 
     def _create_window(self) -> bool:
