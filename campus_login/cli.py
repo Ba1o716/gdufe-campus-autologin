@@ -193,9 +193,12 @@ def cmd_status(args, config: Config, store) -> int:
         print("=" * 40)
         print(_state_to_text(state))
         print(f"适配器：{config.adapter}")
-        print(
-            f"凭据存储：{store.name}（{'已保存账号密码' if credential_saved else '尚未保存账号密码'}）"
-        )
+        store_label = getattr(store, "description", store.name)
+        if credential_saved:
+            print(f"凭据存储：{store_label}（已保存账号：{credential.username}）")
+        else:
+            print(f"凭据存储：{store_label}")
+            print("⚠️ 尚未保存账号密码：请运行 --settings 填写，填完一定要点「保存」")
         print(f"开机自动运行：{'已开启' if autostart_installed else '未开启'}")
         _, local_hint = _local_ip_hint(config)
         print(f"本机校园网 IP（登录时填进 wlan_user_ip）：{local_hint}")

@@ -64,6 +64,7 @@ class SettingsWindow:
         self._build()
         self._load_form()
         self._refresh_status()
+        self._refresh_credential_status()
 
     # ------------------------------------------------------------------
     def _build(self) -> None:
@@ -87,7 +88,17 @@ class SettingsWindow:
         ttk.Button(bottom, text="立即检测", command=self.on_check).pack(side="left")
         ttk.Button(bottom, text="打开登录页面", command=self.on_open_portal).pack(side="left", padx=6)
         ttk.Button(bottom, text="查看日志", command=self.on_open_log).pack(side="left")
-        ttk.Button(bottom, text="关闭", command=self.root.destroy).pack(side="right")
+        ttk.Button(bottom, text="关闭", command=self.on_close).pack(side="right")
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        self.credential_var = tk.StringVar(value="")
+        ttk.Label(
+            self.root,
+            textvariable=self.credential_var,
+            foreground="#b45309",
+            wraplength=640,
+            justify="left",
+        ).pack(fill="x", padx=12, pady=(6, 0))
 
         self.status_var = tk.StringVar(value="")
         ttk.Label(self.root, textvariable=self.status_var, foreground="#0a5").pack(
@@ -333,10 +344,21 @@ class SettingsWindow:
                 redactor().add_secret(password)
                 cfg.username = username
                 self.vars["password"].set("")
-                messages.append("账号密码已安全保存")
+                messages.append(
+                    f"账号密码已保存到 {getattr(self.store, 'description', self.store.name)}"
+                )
             except Exception as exc:
                 messagebox.showerror("保存账号密码失败", str(exc), parent=self.root)
                 return
+        elif password and not username:
+            # 以前这里会静默跳过，导致用户以为保存了其实没保存
+            messagebox.showwarning(
+                "账号没填，没有保存",
+                "你在密码框里填了内容，但「校园网账号」是空的，所以账号密码不会被保存。\n\n"
+                "请把学号填到「校园网账号」里，然后再点一次「保存」。",
+                parent=self.root,
+            )
+            messages.append("⚠️ 账号为空，账号密码未保存")
         elif username:
             existing = self.store.load()
             if existing and existing.password:
@@ -347,7 +369,13 @@ class SettingsWindow:
                     )
                     messages.append("已更新账号（沿用原密码）")
             else:
-                messages.append("提示：还没有保存密码，登录前请填写密码")
+                messagebox.showwarning(
+                    "还没有保存密码",
+                    "只填了账号、没有填密码，所以这次不会保存账号密码。\n\n"
+                    "请把密码也填上，再点一次「保存」。",
+                    parent=self.root,
+                )
+                messages.append("⚠️ 只填了账号，没有保存密码")
 
         try:
             path = save_config(cfg)
@@ -370,6 +398,7 @@ class SettingsWindow:
 
         self.config = cfg
         self._refresh_status()
+        self._refresh_credential_status()
         self.status_var.set("；".join(messages))
         if check:
             self.on_check()
@@ -418,6 +447,40 @@ class SettingsWindow:
         self.root.title(
             f"{APP_DISPLAY_NAME} 设置  v{APP_VERSION}  —  开机自动运行：{'已开启' if installed else '未开启'}"
         )
+
+    def _refresh_credential_status(self) -> None:
+        """明确显示“账号密码到底存上了没有”，避免填了却没保存。"""
+        try:
+            credential = self.store.load()
+        except Exception:
+            credential = None
+        label = getattr(self.store, "description", self.store.name)
+        if credential and credential.complete:
+            self.credential_var.set(
+                f"✅ 已保存的账号：{credential.username}　（存储位置：{label}）"
+            )
+        else:
+            self.credential_var.set(
+                "⚠️ 还没有保存账号密码：填好上面的「校园网账号」和「校园网密码」后，"
+                "一定要点「保存」按钮（填完直接关窗口不会保存）"
+            )
+
+    def on_close(self) -> None:
+        """关闭窗口前提醒未保存的密码。"""
+        if str(self.vars["password"].get()).strip():
+            answer = messagebox.askyesnocancel(
+                "密码还没保存",
+                "你在密码框里填了内容，但还没点「保存」。\n\n"
+                "是：现在保存并关闭\n否：不保存直接关闭",
+                parent=self.root,
+            )
+            if answer is None:
+                return
+            if answer:
+                self.on_save()
+                if str(self.vars["password"].get()).strip():
+                    return  # 保存失败，窗口不关，避免把内容丢了
+        self.root.destroy()
 
     def run(self) -> int:
         self.root.mainloop()

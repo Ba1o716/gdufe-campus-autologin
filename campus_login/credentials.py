@@ -52,6 +52,7 @@ class CredentialStore:
     """凭据存储接口。"""
 
     name = "base"
+    description = "凭据存储"
 
     def is_available(self) -> bool:
         return True
@@ -70,6 +71,7 @@ class MemoryCredentialStore(CredentialStore):
     """仅用于测试 / 无法使用安全存储时的临时方案。"""
 
     name = "memory"
+    description = "内存（仅测试，重启后失效）"
 
     def __init__(self, credential: Credential | None = None) -> None:
         self._credential = credential
@@ -90,6 +92,7 @@ class DpapiCredentialStore(CredentialStore):
     """DPAPI 加密文件（%APPDATA%\\CampusLogin\\credentials.bin）。"""
 
     name = "dpapi"
+    description = "DPAPI 加密文件"
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or credential_file()
@@ -133,6 +136,7 @@ class WindowsCredentialManagerStore(CredentialStore):
     """Windows 凭据管理器。"""
 
     name = "credman"
+    description = "Windows 凭据管理器"
 
     def __init__(self, target: str = CRED_TARGET) -> None:
         self.target = target
@@ -177,22 +181,69 @@ def create_store(backend: str = "auto", logger: logging.Logger | None = None):
     backend = (backend or "auto").lower()
 
     if backend == "memory":
-        return MemoryCredentialStore(), "内存（仅测试）"
+        store = MemoryCredentialStore()
+        return store, store.description
     if backend == "dpapi":
-        return DpapiCredentialStore(), "DPAPI 加密文件"
+        store = DpapiCredentialStore()
+        return store, store.description
     if backend == "credman":
         if credman.available():
-            return WindowsCredentialManagerStore(), "Windows 凭据管理器"
+            store = WindowsCredentialManagerStore()
+            return store, store.description
         logger.warning("当前系统不支持 Windows 凭据管理器，改用 DPAPI 加密文件")
-        return DpapiCredentialStore(), "DPAPI 加密文件"
+        store = DpapiCredentialStore()
+        return store, store.description
 
     # auto
-    if credman.available():
-        return WindowsCredentialManagerStore(), "Windows 凭据管理器"
-    if dpapi.available():
-        return DpapiCredentialStore(), "DPAPI 加密文件"
-    logger.warning("当前系统没有可用的安全凭据存储，暂用内存存储（重启后失效）")
-    return MemoryCredentialStore(), "内存（不安全，仅临时）"
+    if not credman.available() and not dpapi.available():
+        logger.warning("当前系统没有可用的安全凭据存储，暂用内存存储（重启后失效）")
+        store = MemoryCredentialStore()
+        return store, store.description
+    store = AutoCredentialStore(logger)
+    return store, store.description
+
+
+class AutoCredentialStore(CredentialStore):
+    """自动模式：写入优先用 Windows 凭据管理器，读取时两个地方都看一眼。
+
+    这样可以避免“某次保存写进了 DPAPI 文件、另一次却只从凭据管理器读”导致
+    明明保存过却说没保存的情况。
+    """
+
+    name = "auto"
+    description = "Windows 凭据管理器（读取时也会检查 DPAPI 加密文件）"
+
+    def __init__(self, logger: logging.Logger | None = None) -> None:
+        self.log = logger or log
+        self.primary: CredentialStore = WindowsCredentialManagerStore()
+        self.secondary: CredentialStore = DpapiCredentialStore()
+
+    def is_available(self) -> bool:
+        return credman.available() or dpapi.available()
+
+    def save(self, credential: Credential) -> None:
+        # 凭据管理器写失败时会自动退回 DPAPI 文件
+        save_credential(self.primary, credential)
+
+    def load(self) -> Credential | None:
+        for store in (self.primary, self.secondary):
+            try:
+                found = store.load()
+            except Exception as exc:
+                self.log.debug("从 %s 读取凭据失败：%s", store.name, type(exc).__name__)
+                continue
+            if found and found.complete:
+                return found
+        return None
+
+    def delete(self) -> bool:
+        removed = False
+        for store in (self.primary, self.secondary):
+            try:
+                removed = store.delete() or removed
+            except Exception:
+                continue
+        return removed
 
 
 def save_credential(store: CredentialStore, credential: Credential) -> CredentialStore:

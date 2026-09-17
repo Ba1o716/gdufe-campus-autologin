@@ -7,6 +7,7 @@ from pathlib import Path
 
 from campus_login import credman, dpapi
 from campus_login.credentials import (
+    AutoCredentialStore,
     Credential,
     DpapiCredentialStore,
     MemoryCredentialStore,
@@ -107,8 +108,31 @@ class CredentialManagerStoreTest(TempDataDirTestCase):
 class StoreFactoryTest(TempDataDirTestCase):
     def test_auto_backend_is_usable(self):
         store, description = create_store("auto")
-        self.assertIn(store.name, ("credman", "dpapi", "memory"))
+        self.assertIn(store.name, ("auto", "memory"))
         self.assertTrue(description)
+        self.assertIn("凭据管理器", description)
+
+    def test_auto_store_reads_from_secondary_when_primary_empty(self):
+        """凭据管理器里没有、但 DPAPI 文件里有的时候，也要能读到。"""
+        store = AutoCredentialStore()
+        store.primary = MemoryCredentialStore()
+        store.secondary = MemoryCredentialStore(Credential("20250101001", SECRET))
+        loaded = store.load()
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.username, "20250101001")
+        self.assertEqual(loaded.password, SECRET)
+
+    def test_auto_store_prefers_primary(self):
+        store = AutoCredentialStore()
+        store.primary = MemoryCredentialStore(Credential("primary-user", SECRET))
+        store.secondary = MemoryCredentialStore(Credential("secondary-user", SECRET))
+        self.assertEqual(store.load().username, "primary-user")
+
+    def test_auto_store_returns_none_when_both_empty(self):
+        store = AutoCredentialStore()
+        store.primary = MemoryCredentialStore()
+        store.secondary = MemoryCredentialStore()
+        self.assertIsNone(store.load())
 
     def test_memory_backend(self):
         store, _ = create_store("memory")

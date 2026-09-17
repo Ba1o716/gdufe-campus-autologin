@@ -256,7 +256,14 @@ class CampusLoginService:
             if not state.network_down:
                 credential = self.load_credential()
                 if credential is None or not credential.complete:
-                    self._login_blocked = "尚未保存校园网账号和密码，请先运行设置界面填写"
+                    where = getattr(
+                        self.store, "description", getattr(self.store, "name", "凭据存储")
+                    )
+                    self.log.warning("未找到校园网账号密码（已检查：%s）", where)
+                    self._login_blocked = (
+                        "尚未保存校园网账号和密码：请打开设置填好账号和密码，"
+                        "并点击「保存」按钮（只关闭设置窗口不会保存）"
+                    )
                     self.log.warning(self._login_blocked)
                     self._emit(Status.FAILED, self._login_blocked, important=True)
                     return Status.FAILED
