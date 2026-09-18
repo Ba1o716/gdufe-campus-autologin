@@ -31,6 +31,7 @@ WM_RBUTTONUP = 0x0205
 WM_CONTEXTMENU = 0x007B
 WM_APP = 0x8000
 WM_APP_STATUS = WM_APP + 1
+WM_APP_NOTIFY = WM_APP + 2      # 其它进程请求弹一个气泡（例如重复启动时）
 WM_TRAYICON = WM_APP + 20
 
 NIM_ADD = 0x00000000
@@ -402,6 +403,12 @@ class TrayIcon:
             if msg == WM_APP_STATUS:
                 self._notify_modify()
                 return 0
+            if msg == WM_APP_NOTIFY:
+                self.notify(
+                    "校园网自动登录",
+                    "程序已经在后台运行（托盘图标可能被折叠在任务栏的 ^ 里）。",
+                )
+                return 0
             if msg == WM_COMMAND:
                 self._dispatch(wparam & 0xFFFF)
                 return 0
@@ -524,5 +531,18 @@ def request_quit() -> bool:
         user32 = ctypes.WinDLL("user32", use_last_error=True)
         user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
         return bool(user32.PostMessageW(wintypes.HWND(handle), WM_CLOSE, 0, 0))
+    except Exception:
+        return False
+
+
+def notify_running_instance() -> bool:
+    """让正在运行的实例弹一个气泡提示（重复启动时用）。返回是否找到实例。"""
+    handle = running_window_handle()
+    if not handle:
+        return False
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        return bool(user32.PostMessageW(wintypes.HWND(handle), WM_APP_NOTIFY, 0, 0))
     except Exception:
         return False

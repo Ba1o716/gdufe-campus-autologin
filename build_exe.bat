@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo ============================================================
-echo  CampusLogin - build CampusLogin.exe  (needs internet once)
+echo  CampusLogin - build app folder (onedir, needs internet once)
 echo ============================================================
 echo.
 
@@ -19,7 +19,7 @@ if "%PY%"=="" (
     exit /b 1
 )
 
-echo [1/3] Installing dependencies: requests, pyinstaller ...
+echo [1/4] Installing dependencies: requests, pyinstaller ...
 %PY% -m pip install --quiet --disable-pip-version-check -r requirements.txt pyinstaller
 if errorlevel 1 (
     echo [ERROR] pip install failed. Check your internet or proxy settings.
@@ -27,11 +27,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [2/3] Cleaning old build output ...
+echo [2/4] Cleaning old build output ...
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 
-echo [3/3] Building, this may take 1-2 minutes ...
+echo [3/4] Building, this may take 1-2 minutes ...
 %PY% -m PyInstaller --clean --noconfirm CampusLogin.spec
 if errorlevel 1 (
     echo [ERROR] Build failed. See the messages above.
@@ -39,10 +39,20 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo [4/4] Zipping the folder for distribution ...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Compress-Archive -Path 'dist\CampusLogin' -DestinationPath 'dist\CampusLogin.zip' -Force"
+if errorlevel 1 (
+    echo [WARN] Zip failed, you can zip dist\CampusLogin manually.
+)
+
 echo.
 echo Done.
-echo   dist\CampusLogin.exe      - tray mode, no console window
-echo   dist\CampusLoginCLI.exe   - console mode, for --status / --login
+echo   app folder : dist\CampusLogin\
+echo     CampusLogin.exe      - tray mode, no console window (double-click this)
+echo     CampusLoginCLI.exe   - console mode, for --status / --login / --install
+echo   zip for sharing : dist\CampusLogin.zip
+echo.
+echo Give the zip to others. They unzip it and double-click CampusLogin.exe.
 echo.
 pause
 endlocal

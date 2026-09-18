@@ -96,7 +96,12 @@ class CredentialManagerStoreTest(TempDataDirTestCase):
         store.delete()
         self.addCleanup(store.delete)
         self.assertIsNone(store.load())
-        store.save(Credential("2021001", SECRET))
+        try:
+            store.save(Credential("2021001", SECRET))
+        except credman.CredentialError as exc:
+            # 某些会话（例如没有交互式登录、凭据保管库不可用）会返回 1312
+            # ERROR_NO_SUCH_LOGON_SESSION，属于环境限制，跳过即可
+            self.skipTest(f"当前环境的凭据管理器不可写：{exc}")
         loaded = store.load()
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.username, "2021001")
@@ -145,6 +150,43 @@ class StoreFactoryTest(TempDataDirTestCase):
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.password, SECRET)
         used.delete()
+
+    def test_save_falls_back_to_dpapi_when_credman_fails(self):
+        """凭据管理器写不进去（例如 1312）时要自动退回 DPAPI 文件，不能丢密码。"""
+        if not dpapi.available():
+            self.skipTest("DPAPI 仅在 Windows 可用")
+
+        class BrokenCredman(WindowsCredentialManagerStore):
+            def save(self, credential):
+                raise credman.CredentialError("CredWriteW 失败", 1312)
+
+        used = save_credential(BrokenCredman(), Credential("2021001", SECRET))
+        self.assertIsInstance(used, DpapiCredentialStore)
+        loaded = used.load()
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.username, "2021001")
+        self.assertEqual(loaded.password, SECRET)
+        used.delete()
+
+    def test_auto_store_survives_broken_credman(self):
+        """凭据管理器整体不可用时，auto 模式仍应能用 DPAPI 保存并读回。"""
+        if not dpapi.available():
+            self.skipTest("DPAPI 仅在 Windows 可用")
+
+        class BrokenCredman(WindowsCredentialManagerStore):
+            def save(self, credential):
+                raise credman.CredentialError("CredWriteW 失败", 1312)
+
+            def load(self):
+                raise credman.CredentialError("CredReadW 失败", 1312)
+
+        store = AutoCredentialStore()
+        store.primary = BrokenCredman()
+        store.save(Credential("2021001", SECRET))
+        loaded = store.load()
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.password, SECRET)
+        store.delete()
 
     def test_dpapi_backend_selection(self):
         if not dpapi.available():

@@ -1,8 +1,20 @@
 """Windows 开机自动运行。
 
 提供两种“不需要管理员权限”的官方机制：
-  1. 任务计划程序（Task Scheduler，默认）：登录时触发，后台无窗口；
-  2. 注册表 HKCU\\...\\Run：更简单，同样不需要管理员权限。
+  1. 任务计划程序（Task Scheduler，默认）：用 XML 完整配置任务，登录时触发，
+     后台无窗口；
+  2. 注册表 HKCU\\...\\Run：更简单，同样不需要管理员权限（作为兜底方案）。
+
+用 XML 而不是 `schtasks /SC ONLOGON` 的原因：命令行方式**没法**设置下面这些关键项，
+它们正好是笔记本“开机没自动启动 / 插上电源才启动”的元凶（Task Scheduler 默认值）：
+
+  * DisallowStartIfOnBatteries  默认 true  → 用电池时任务不启动（排队等到插电）
+  * StopIfGoingOnBatteries      默认 true  → 正在运行时拔掉电源，任务被系统停掉
+  * ExecutionTimeLimit          默认 72h   → 程序跑满 3 天会被杀掉
+
+XML 方式还额外做了两件事：
+  * 登录 + 工作站解锁时都触发（合盖唤醒后解锁也能拉起来）
+  * 每 5 分钟自愈检查一次：程序没在跑就拉起来（单实例保护保证不会重复运行）
 
 安装 / 卸载都是幂等的：重复安装只会有一个启动项，卸载后一定清理干净。
 """
@@ -15,10 +27,13 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Callable, Sequence
+from xml.sax.saxutils import escape
 
 from .config import Config
-from .paths import run_command
+from .paths import data_dir, run_command
 
 log = logging.getLogger("campus_login.autostart")
 
@@ -28,9 +43,125 @@ RUN_VALUE = "CampusLogin"
 
 CREATE_NO_WINDOW = 0x08000000
 
+# 自愈检查间隔（分钟）。0 = 关闭自愈检查，只保留登录/解锁触发。
+SELF_CHECK_MINUTES = 5
+
 
 class AutostartError(RuntimeError):
     """设置开机启动失败。"""
+
+
+def split_command_line(command: str) -> list[str]:
+    """把 Windows 命令行拆成 [程序, 参数...]（支持双引号包裹，够本项目使用）。"""
+    import re
+
+    parts = [match.group(1) if match.group(1) is not None else match.group(2)
+             for match in re.finditer(r'"([^"]*)"|(\S+)', command or "")]
+    return [part for part in parts if part]
+
+
+def current_user_id() -> str:
+    """返回任务计划用的用户标识：DOMAIN\\用户名。"""
+    domain = os.environ.get("USERDOMAIN") or os.environ.get("COMPUTERNAME") or ""
+    user = os.environ.get("USERNAME") or ""
+    return f"{domain}\\{user}" if domain and user else user
+
+
+def working_directory_for(launch_args: Sequence[str]) -> str:
+    """推导工作目录：exe 取所在目录；源码方式取脚本所在目录。"""
+    args = list(launch_args or [])
+    if not args:
+        return ""
+    if len(args) >= 2 and args[1].lower().endswith(".py"):
+        return str(Path(args[1]).resolve().parent)
+    return str(Path(args[0]).resolve().parent)
+
+
+def build_task_xml(
+    *,
+    task_name: str,
+    command: str,
+    arguments: str = "",
+    working_directory: str = "",
+    user_id: str | None = None,
+    check_minutes: int = SELF_CHECK_MINUTES,
+    description: str = "校园网自动登录：登录/解锁/定时检查时确保程序在运行（CampusLogin）",
+) -> str:
+    """生成任务计划程序的任务 XML。
+
+    关键点见模块开头说明：关掉电源限制、不限运行时长、登录+解锁触发、定时自愈。
+    """
+    user = user_id or current_user_id()
+    triggers: list[str] = [
+        "    <LogonTrigger>\n"
+        "      <Enabled>true</Enabled>\n"
+        f"      <UserId>{escape(user)}</UserId>\n"
+        "    </LogonTrigger>"
+    ]
+    if check_minutes and int(check_minutes) > 0:
+        start = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        triggers.append(
+            "    <TimeTrigger>\n"
+            "      <Repetition>\n"
+            f"        <Interval>PT{int(check_minutes)}M</Interval>\n"
+            "        <StopAtDurationEnd>false</StopAtDurationEnd>\n"
+            "      </Repetition>\n"
+            f"      <StartBoundary>{start}</StartBoundary>\n"
+            "      <Enabled>true</Enabled>\n"
+            "    </TimeTrigger>"
+        )
+    triggers.append(
+        "    <SessionStateChangeTrigger>\n"
+        "      <Enabled>true</Enabled>\n"
+        f"      <UserId>{escape(user)}</UserId>\n"
+        "      <StateChange>SessionUnlock</StateChange>\n"
+        "    </SessionStateChangeTrigger>"
+    )
+
+    return f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>{escape(description)}</Description>
+    <URI>\\{escape(task_name)}</URI>
+  </RegistrationInfo>
+  <Triggers>
+{chr(10).join(triggers)}
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>{escape(user)}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{escape(command)}</Command>
+      <Arguments>{escape(arguments)}</Arguments>
+      <WorkingDirectory>{escape(working_directory)}</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+"""
 
 
 @dataclass
@@ -74,10 +205,14 @@ class TaskSchedulerBackend:
         command: str,
         task_name: str = TASK_NAME,
         runner: Callable[[Sequence[str]], tuple[int, str]] | None = None,
+        launch_args: Sequence[str] | None = None,
+        self_check_minutes: int = SELF_CHECK_MINUTES,
     ) -> None:
         self.command = command
         self.task_name = task_name
         self.runner = runner or _default_runner
+        self.launch_args = list(launch_args) if launch_args else split_command_line(command)
+        self.self_check_minutes = int(self_check_minutes)
 
     @property
     def location(self) -> str:
@@ -106,6 +241,19 @@ class TaskSchedulerBackend:
         return ""
 
     def install(self) -> AutostartStatus:
+        xml_problem = self._install_with_xml()
+        if xml_problem is None:
+            return AutostartStatus(
+                True,
+                self.name,
+                self.command,
+                self.location,
+                "已用完整配置创建任务（电池下也会启动、切换电池不停止、不限运行时长、"
+                f"登录+解锁触发、每 {self.self_check_minutes} 分钟自愈检查）",
+            )
+
+        # XML 方式不可用（例如安全软件拦了 XML 导入）时，退回最简单的命令行方式
+        log.warning("用 XML 创建任务失败（%s），改用命令行方式创建", xml_problem)
         args = [
             "schtasks",
             "/Create",
@@ -120,10 +268,50 @@ class TaskSchedulerBackend:
         code, output = self.runner(args)
         if code != 0:
             message = output.strip().splitlines()[-1] if output.strip() else f"退出码 {code}"
-            raise AutostartError(f"创建计划任务失败：{message}")
-        # 立刻用 query 复核一次，确保安装真的生效（幂等：只会有一个同名任务）
+            raise AutostartError(f"创建计划任务失败：{message}（XML 方式也失败：{xml_problem}）")
         installed = self.is_installed()
-        return AutostartStatus(True, self.name, self.command, self.location, "已创建/覆盖同名任务" if installed else "创建命令已执行")
+        return AutostartStatus(
+            True,
+            self.name,
+            self.command,
+            self.location,
+            "已创建/覆盖同名任务（简化方式：可能是电池供电时不启动，建议以管理员身份重试或用 exe 版本）"
+            if installed
+            else "创建命令已执行",
+        )
+
+    def _install_with_xml(self) -> str | None:
+        """用 XML 创建任务。成功返回 None，失败返回原因文本。"""
+        xml_path: Path | None = None
+        try:
+            args = self.launch_args or [self.command]
+            xml = build_task_xml(
+                task_name=self.task_name,
+                command=args[0],
+                arguments=subprocess.list2cmdline(list(args[1:])),
+                working_directory=working_directory_for(args),
+                check_minutes=self.self_check_minutes,
+            )
+            xml_path = data_dir() / f"{self.task_name}.task.xml"
+            # schtasks /XML 需要 Unicode（UTF-16）编码的 XML 文件
+            xml_path.write_text(xml, encoding="utf-16")
+            code, output = self.runner(
+                ["schtasks", "/Create", "/TN", self.task_name, "/XML", str(xml_path), "/F"]
+            )
+            if code != 0:
+                text = output.strip()
+                return text.splitlines()[-1] if text else f"退出码 {code}"
+            if not self.is_installed():
+                return "命令执行成功但查询不到该任务"
+            return None
+        except Exception as exc:
+            return f"{type(exc).__name__}: {exc}"
+        finally:
+            if xml_path is not None:
+                try:
+                    xml_path.unlink()
+                except OSError:
+                    pass
 
     def uninstall(self) -> AutostartStatus:
         if not self.is_installed():
@@ -219,10 +407,16 @@ class AutostartManager:
         command: str | None = None,
         logger: logging.Logger | None = None,
         backend_instance=None,
+        launch_args: Sequence[str] | None = None,
     ) -> None:
         self.config = config
         self.log = logger or log
-        self.command = command or run_command(("--tray",))
+        if launch_args:
+            self.launch_args = list(launch_args)
+            self.command = command or subprocess.list2cmdline(self.launch_args)
+        else:
+            self.command = command or run_command(("--tray",))
+            self.launch_args = split_command_line(self.command)
         self.backend_name = (backend or config.autostart_backend or "task").lower()
         if self.backend_name not in ("task", "registry"):
             self.backend_name = "task"
@@ -240,7 +434,7 @@ class AutostartManager:
     def _make_backend(self, name: str, runner):
         if name == "registry":
             return RegistryBackend(self.command)
-        return TaskSchedulerBackend(self.command, runner=runner)
+        return TaskSchedulerBackend(self.command, runner=runner, launch_args=self.launch_args)
 
     @property
     def location(self) -> str:

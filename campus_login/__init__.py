@@ -11,6 +11,6 @@ from __future__ import annotations
 
 APP_NAME = "CampusLogin"
 APP_DISPLAY_NAME = "校园网自动登录"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 
 __all__ = ["APP_NAME", "APP_DISPLAY_NAME", "APP_VERSION"]

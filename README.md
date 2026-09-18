@@ -18,7 +18,8 @@ Windows 上的**开机自动登录校园网**小工具。开机后它会：
 * 请在**自己的电脑、自己的账号**上使用，遵守学校和运营商的网络使用规定。
 * **不要在 Issue / 讨论区粘贴**你的账号、密码，或包含密码的完整请求 URL。
 * 程序按"现状"提供，使用风险自负。
-* bat出现编码错乱时，建议使用命令行
+
+遇到问题可以加微信 **`zyffwazqs`**（备注「校园网」），或者在本仓库提 Issue —— 详见文末第 19 节。
 
 ## 快速开始（3 步）
 
@@ -40,11 +41,9 @@ Windows 上的**开机自动登录校园网**小工具。开机后它会：
 这样就完成了。右下角托盘会出现蓝色 Wi-Fi 图标，之后开机就会自动登录。
 想先测一下：`python campus_login_main.py --login`，然后看日志。
 
-> 不想装 Python 也能用：双击 `build_exe.bat` 打包出 `CampusLogin.exe`（需要一个能联网的环境装 PyInstaller）。
->powershell里面输入：python -m pip install pyinstaller 
->然后cd <安装目录> 
->输入python -m PyInstaller --clean --noconfirm CampusLogin.spec 
->exe程序会出现在dist文件夹里面
+> 不想装 Python 也能用：双击 `build_exe.bat` 打包出 `dist\CampusLogin\` 文件夹（里面是
+> `CampusLogin.exe`，双击即可用）。打包需要一个能联网的环境装 PyInstaller。
+
 ---
 
 ## 0. 当前状态（重要，先看这里）
@@ -57,10 +56,10 @@ Windows 上的**开机自动登录校园网**小工具。开机后它会：
 | 开机自动运行（任务计划程序 + 注册表双通道） | ✅ 已完成，幂等（重复安装不会产生两个启动项） |
 | 系统托盘 + 设置界面（tkinter） | ✅ 已完成（托盘不可用时自动降级为后台运行） |
 | 命令行（--status / --login / --install / --discover / --selftest ...） | ✅ 已完成 |
-| 自动化测试 164 项 | ✅ 全部通过（`run_tests.bat`） |
+| 自动化测试 195 项 | ✅ 全部通过（`run_tests.bat`） |
 | 离线自检 14 项场景 | ✅ 全部通过（`--selftest`，不联网、不需要密码） |
 | **广东财经大学佛山校区接口** | ✅ 已按实测抓包配置好（见第 18 节） |
-| 打包成 `CampusLogin.exe` | ✅ 脚本已就绪（`build_exe.bat`，需要联网装 PyInstaller） |
+| 打包成 exe（文件夹模式） | ✅ 脚本已就绪（`build_exe.bat` → `dist\CampusLogin\` 文件夹 + 自动打包 zip） |
 
 **程序不猜接口**：缺少必要参数时，它会在日志里写清楚"这里需要真实校园网请求信息
 才能继续"，同时保证不崩溃、不乱发请求、不提交密码。
@@ -141,7 +140,7 @@ CampusLogin/
 │   ├── devserver.py             本机"假校园网门户"（自检/测试用）
 │   └── simulation.py            模拟网络（离线测试用）
 │   └── assets/                  托盘图标（tray.ico）与预览图
-├── tests/                       164 项自动化测试（unittest，不需要联网）
+├── tests/                       195 项自动化测试（unittest，不需要联网）
 ├── tools/make_icon.py           重新生成图标（可选，需要 Pillow）
 ├── .github/workflows/tests.yml  GitHub Actions：推送时自动跑测试
 ├── LICENSE                      MIT 许可证
@@ -150,7 +149,7 @@ CampusLogin/
 ├── run_tray.bat                 立即启动托盘程序
 ├── selftest.bat                 离线自检（不联网、不需要密码）
 ├── run_tests.bat                跑自动化测试
-├── build_exe.bat                打包成 CampusLogin.exe / CampusLoginCLI.exe
+├── build_exe.bat                打包成 dist\CampusLogin\ 文件夹（onedir）并自动压成 zip
 └── CampusLogin.spec             PyInstaller 打包配置
 ```
 
@@ -194,14 +193,72 @@ CampusLogin/
 
    或者双击 `install.bat`（会依次完成上面两步）。
 
-### 4.2 打包成 EXE（可选）
+### 4.2 自己编译成 EXE（打包教程）
 
-联网状态下双击 `build_exe.bat`，会生成：
+> 不想装 Python 的同学，直接用别人打包好的 `CampusLogin.zip` 就行；
+> 这一节是给**想自己编译**的人看的（比如不放心用别人打的包，或者想自己改代码）。
 
-* `dist\CampusLogin.exe` —— 无控制台窗口，双击即可在托盘后台运行（开机启动用这个）；
-* `dist\CampusLoginCLI.exe` —— 带控制台窗口，方便用 `--status`、`--login` 等命令。
+**准备工作**
 
-打包依赖 PyInstaller（只有打包时需要联网安装），运行 EXE 的电脑**不需要** Python。
+1. 安装 Python **3.9 ~ 3.12**（到 python.org 下载，安装时**务必勾选 `Add python.exe to PATH`**）；
+2. 打包时电脑要能联网（要从网上下载 PyInstaller）。
+
+**方法一：一键打包（推荐）**
+
+双击 `build_exe.bat`，它会自动完成 4 件事：
+
+1. 安装依赖（`requests`、`pyinstaller`）；
+2. 清理上次的 `build\`、`dist\`；
+3. 按 `CampusLogin.spec` 调用 PyInstaller 打包；
+4. 把产物压成 `dist\CampusLogin.zip`，方便直接发人。
+
+**方法二：手动三步（脚本被杀毒软件拦了就用这个）**
+
+```powershell
+cd <项目目录>
+python -m pip install -r requirements.txt pyinstaller
+python -m PyInstaller --clean --noconfirm CampusLogin.spec
+```
+
+> 下载慢就换国内镜像：
+> `python -m pip install -r requirements.txt pyinstaller -i https://pypi.tuna.tsinghua.edu.cn/simple`
+
+**打包产物**
+
+```
+dist\CampusLogin\                 ← 程序本体（文件夹模式）
+├── CampusLogin.exe               ← 双击它，无控制台窗口，直接进托盘（发给同学就发这个）
+├── CampusLoginCLI.exe            ← 带控制台窗口，用 --status / --login / --install 等命令
+└── _internal\                    ← 运行库（两个 exe 共用，别删）
+
+dist\CampusLogin.zip              ← 打包脚本自动生成的分发包
+```
+
+**发给同学的方式**：把 `CampusLogin.zip` 发出去，对方解压后双击 `CampusLogin.exe` 即可，
+不需要装 Python。注意**不要把 `CampusLogin.exe` 单独拷出来**，它必须和 `_internal\` 放在一起。
+
+> **为什么是文件夹而不是单个 exe？**
+> 单文件 exe 每次启动都要把自己解压到临时目录。而程序带"每 5 分钟自愈检查"，
+> 一天要启动近 300 次，单文件模式下会产生十几 GB 的临时写入、启动也更慢、
+> 还更容易被杀毒软件误报。文件夹模式启动快、开销小，是目前推荐的发布方式。
+
+**如果你确实只想要一个单文件 exe**（不推荐，但可以）：
+
+```powershell
+python -m PyInstaller --clean --noconfirm --onefile --windowed --name CampusLogin --icon campus_login\assets\tray.ico --add-data "campus_login\assets\tray.ico;assets" campus_login_main.py
+```
+
+代价就是上面说的那几条：启动慢 1~2 秒、每次启动都会解压、临时文件写入多、更容易被误报。
+
+**打包常见问题**
+
+| 现象 | 处理 |
+| --- | --- |
+| `Could not find a version that satisfies the requirement pyinstaller` | 连不上 PyPI：换清华镜像（见上面），或检查代理是否放行 `pypi.org` |
+| `Python 3.14 is not supported` | PyInstaller 还没支持你装的 Python 版本，装一个 Python 3.12 再打包：`py -3.12 -m PyInstaller --clean --noconfirm CampusLogin.spec` |
+| 打包成功但双击没反应 | 开命令行看输出：`dist\CampusLogin\CampusLoginCLI.exe --status`；日志在 `%APPDATA%\CampusLogin\logs\app.log` |
+| 杀毒软件拦截 / 提示未知发布者 | 把程序目录加进信任列表；SmartScreen 提示点「更多信息 → 仍要运行」 |
+| 换了打包版本后开机自启失效 | 启动项记的是绝对路径，重新执行一次 `--install`（见 4.4） |
 
 ### 4.3 不想用 .bat？直接用命令行
 
@@ -212,7 +269,7 @@ CampusLogin/
 | --- | --- |
 | 安装（依赖 + 开机自启 + 打开设置） | `pip install -r requirements.txt`<br>`python campus_login_main.py --install`<br>`python campus_login_main.py --settings` |
 | 立即启动（托盘后台） | `pythonw campus_login_main.py --tray` |
-| 打包 EXE | `pip install pyinstaller`<br>`python -m PyInstaller --clean --noconfirm CampusLogin.spec` |
+| 打包 APP 文件夹 | `pip install pyinstaller`<br>`python -m PyInstaller --clean --noconfirm CampusLogin.spec`<br>（产物在 `dist\CampusLogin\`） |
 | 取消开机自启 | `python campus_login_main.py --uninstall` |
 | 关闭后台程序 | `python campus_login_main.py --quit` |
 
@@ -220,7 +277,20 @@ CampusLogin/
 > 支持你装的这个 Python 版本，装一个 Python 3.12 再打包即可（或用 `py -3.12 -m PyInstaller ...`）。
 > 只发源码也能正常使用，不影响功能。
 
+### 4.4 用打包好的版本时，开机自启要重新安装一次
 
+开机启动项里存的是**绝对路径**。所以：
+
+* 从源码方式换成打包好的 `CampusLogin.exe`（或反过来）之后，
+* 或者移动了程序文件夹之后，
+
+都需要重新执行一次安装，让启动项指向新位置（**幂等**，不会产生第二条）：
+
+```powershell
+cd <程序所在目录>
+CampusLoginCLI.exe --install        # 打包版
+python campus_login_main.py --install   # 源码版
+```
 ---
 
 ## 5. 首次配置
@@ -443,10 +513,30 @@ python campus_login_main.py --install
 或者双击 `install.bat`。它会：
 
 1. 在 **任务计划程序**里创建一个当前用户的计划任务（任务名 `CampusLogin`），
-   触发条件 = "登录时"，不需要管理员权限，不会弹黑窗口；
+   不需要管理员权限，不会弹黑窗口；
 2. 如果任务计划程序不可用（被组策略/安全软件拦了），自动改用
    **注册表** `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`；
 3. **幂等**：重复执行只会有一个启动项，不会重复添加。
+
+### 这个任务被特意配置成了什么样子（重要）
+
+任务计划程序给新建任务的**默认值**会坑到笔记本用户，所以程序用 XML 方式建任务，
+把这些开关都调好了，**你不需要手动改任何设置**：
+
+| 设置项 | 系统默认 | 本程序设置为 | 不这样做会怎样 |
+| --- | --- | --- | --- |
+| 只有在交流电源下才启动 | 是 | **否** | 电池供电时开机/登录**不会启动**，插上电源才补跑 |
+| 切换到电池电源时停止任务 | 是 | **否** | 拔掉电源的瞬间，程序**被系统杀掉** |
+| 运行超过这个时间就停止 | 72 小时 | **不限** | 程序跑满 3 天被系统结束 |
+| 触发器 | 仅"登录时" | **登录 + 工作站解锁 + 每 5 分钟检查一次** | 合盖唤醒后不会自动拉起；被意外杀掉也不会恢复 |
+| 如果错过开始时间则尽快启动 | 否 | **是** | 关机/休眠期间错过的触发不会补跑 |
+
+最后那条"每 5 分钟检查一次"是**自愈机制**：程序平时会在几秒内发现"已经有实例在
+运行"然后静默退出（不弹窗、不占资源），但如果因为任何原因（拔电源被杀、崩溃、
+任务管理器结束进程、唤醒后没起来）没在运行，最多 5 分钟就会自动恢复。
+
+> 如果你的任务是很早以前用旧版本创建的，重新执行一次 `--install` 就会用新配置覆盖
+> （幂等，不会产生第二条任务）。
 
 ### 方式二：图形界面
 
@@ -560,6 +650,10 @@ python campus_login_main.py --tray       # 启动托盘后台（等价于不带�
 | 托盘图标不见了 | 资源管理器重启 | 程序会自动重新添加图标（监听 TaskbarCreated） |
 | 托盘右键"退出"没反应、进程关不掉 | 旧版本退出逻辑的 bug（WM_CLOSE 死循环） | 已修复；旧版本用 `python campus_login_main.py --quit`，或任务管理器结束 pythonw.exe |
 | 开机后看不到托盘图标 | 开机瞬间资源管理器还没准备好 | 程序会自动重试 3 次（每次隔 5 秒）；仍失败则转为后台运行，可用 `--status` 查看、`--quit` 关闭 |
+| 用电池开机时程序不启动、插上电源才启动 | 任务计划程序默认"只在交流电源下启动" | 重新执行一次 `python campus_login_main.py --install`（新版会用 XML 建任务，自带"电池也启动"） |
+| 拔掉电源后程序消失了 | 任务计划程序默认"切换到电池时停止任务" | 同上，重新 `--install` 覆盖任务配置 |
+| 合盖唤醒后程序没在跑 | "登录时触发"不会在唤醒时触发 | 新版任务带"解锁触发 + 每 5 分钟自愈检查"，重新 `--install` 即可 |
+| 双击程序"没反应" | 程序已经在后台运行（单实例） | 正常现象：会弹一个气泡提示，托盘图标可能在 `^` 里 |
 | 日志目录/配置文件写不进去 | 权限异常、磁盘满、安全软件拦截 | 程序会自动改用其它可用目录，不会因此启动失败 |
 | `无法显示托盘图标` 弹窗 | 当前会话没有桌面 Shell | 程序会退化为后台运行，功能不受影响，用 `--status` / 日志查看 |
 | `--status` 提示"检测到代理/VPN 虚拟网卡" | 开着 Clash / FlClash 等 **TUN 模式**代理 | 认证期间建议关闭它；或在代理里给 `100.64.0.0/10`、`172.31.0.0/16` 加 `DIRECT` 规则 |
@@ -663,7 +757,7 @@ JS 运行时（例如用 WebAssembly/加密脚本生成 Token）时，才考虑�
 不需要联网、不需要真实账号，全部用本机模拟校园网门户（`campus_login/devserver.py`）：
 
 ```powershell
-python -m unittest discover -s tests -t .   # 164 项测试
+python -m unittest discover -s tests -t .   # 195 项测试
 python campus_login_main.py --selftest      # 20 秒内跑完的离线自检（11 项场景）
 ```
 
@@ -714,6 +808,24 @@ python campus_login_main.py --selftest      # 20 秒内跑完的离线自检（1
 2. 如果学校启用了验证码 / 短信验证 / 二次认证，程序只会提示人工处理（不会去绕过）。
 3. 如果学校有"认证状态查询"接口，填到「认证状态检测地址」会比通用的 204 探测更准确。
 
-如果有问题欢迎咨询
-个人wx：zyffwazqs
-本程序由codex+deepseek v4 flash & 本人测试调整生成，理性看待
+
+
+
+
+---
+
+## 19. 联系与反馈
+
+用的时候遇到问题、或者你们学校的认证接口不一样，欢迎联系我：
+
+- **微信：`zyffwazqs`**（加好友时请备注一下「校园网」，方便我通过）
+- 也可以在本仓库提 **Issue**（贴日志时请先把账号、密码等隐私信息去掉）
+
+反馈问题时，附上这两样最快定位：
+
+```powershell
+CampusLoginCLI.exe --status        # 当前状态（含认证状态、凭据、本机 IP）
+CampusLoginCLI.exe --tail 50       # 最近 50 行日志
+```
+
+日志文件位置：`%APPDATA%\CampusLogin\logs\app.log`（里面不会有你的密码）。

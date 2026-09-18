@@ -26,6 +26,7 @@ class FakeSchtasks:
         self.tasks: dict[str, str] = {}
         self.calls: list[list[str]] = []
         self.fail = fail
+        self.xml_seen = ""
 
     def __call__(self, args):
         args = [str(item) for item in args]
@@ -35,6 +36,19 @@ class FakeSchtasks:
         verb = args[1].lower()
         if verb == "/create":
             name = args[args.index("/TN") + 1]
+            if "/XML" in args:
+                from pathlib import Path
+                from xml.etree import ElementTree
+
+                xml_text = Path(args[args.index("/XML") + 1]).read_text(encoding="utf-16")
+                self.xml_seen = xml_text
+                # 模仿 schtasks /Query /V 的输出：把 XML 里的命令拼回一行
+                ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+                node = ElementTree.fromstring(xml_text).find("t:Actions/t:Exec", ns)
+                self.tasks[name] = (
+                    f"{node.find('t:Command', ns).text} {node.find('t:Arguments', ns).text}".strip()
+                )
+                return 0, f'成功: 已创建计划任务 "{name}"。'
             command = args[args.index("/TR") + 1]
             self.tasks[name] = command
             return 0, f'成功: 已创建计划任务 "{name}"。'
@@ -75,7 +89,8 @@ class TaskSchedulerBackendTest(unittest.TestCase):
         status = self.backend.install()
         self.assertTrue(status.installed)
         self.assertTrue(self.backend.is_installed())
-        self.assertEqual(self.runner.tasks, {"CampusLoginTest": COMMAND})
+        self.assertEqual(len(self.runner.tasks), 1)
+        self.assertIn("campus_login_main.py", self.runner.tasks["CampusLoginTest"])
 
         self.backend.install()
         self.assertEqual(len(self.runner.tasks), 1, "重复安装不能产生两个启动项")
@@ -89,13 +104,15 @@ class TaskSchedulerBackendTest(unittest.TestCase):
         self.assertFalse(again.installed)
         self.assertIn("不存在", again.detail)
 
-    def test_install_uses_onlogon_and_force(self):
+    def test_install_uses_xml_config(self):
+        """安装必须走 XML 方式：只有这样才能关掉“电池供电不启动/切换电池即停止”。"""
         self.backend.install()
         create_args = self.runner.calls[0]
-        self.assertIn("/SC", create_args)
-        self.assertEqual(create_args[create_args.index("/SC") + 1], "ONLOGON")
+        self.assertIn("/XML", create_args)
         self.assertIn("/F", create_args)
-        self.assertEqual(create_args[create_args.index("/TR") + 1], COMMAND)
+        self.assertIn("<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>", self.runner.xml_seen)
+        self.assertIn("<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>", self.runner.xml_seen)
+        self.assertIn("<LogonTrigger>", self.runner.xml_seen)
 
     def test_failure_raises_error(self):
         backend = TaskSchedulerBackend(COMMAND, runner=FakeSchtasks(fail=True))
@@ -104,7 +121,9 @@ class TaskSchedulerBackendTest(unittest.TestCase):
 
     def test_current_command_is_parsed(self):
         self.backend.install()
-        self.assertEqual(self.backend.current_command(), COMMAND)
+        current = self.backend.current_command()
+        self.assertIn("pythonw.exe", current)
+        self.assertIn("--tray", current)
 
 
 class FakeRegistry:

@@ -29,7 +29,7 @@ from .config import Config, load_config, save_config
 from .credentials import Credential, MemoryCredentialStore, create_store
 from .devserver import LocalPortal
 from .instance import SingleInstance
-from .logging_setup import setup_logging
+from .logging_setup import get_logger, setup_logging
 from .network import USER_AGENT, build_session, check_authentication
 from .paths import config_path, log_path
 from .retry import FakeSleeper
@@ -709,7 +709,16 @@ def cmd_selftest(args, config: Config) -> int:
 def _run_tray() -> int:
     guard = SingleInstance()
     if not guard.acquire():
-        message_box(APP_DISPLAY_NAME, "校园网自动登录已经在运行（请看任务栏右下角的托盘图标）。")
+        # 任务计划里的“定时自愈检查”每几分钟就会拉起一次，这里必须静默退出；
+        # 如果是用户手动双击，就请已经在跑的实例弹个气泡提示一下。
+        from .tray import notify_running_instance
+
+        notify_running_instance()
+        try:
+            setup_logging(load_config())
+            get_logger("cli").info("已有实例在运行，本次启动直接退出")
+        except Exception:
+            pass
         return EXIT_OK
     try:
         app = Application()
