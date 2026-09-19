@@ -134,6 +134,7 @@ class Config:
 
     # ---- 集成 ----
     auto_start_on_boot: bool = False
+    autostart_prompted: bool = False   # 是否已经问过用户“要不要开机自动运行”
     autostart_backend: str = "task"         # task（任务计划程序）/ registry（HKCU Run）
     credential_backend: str = "auto"        # auto / credman / dpapi / memory
 

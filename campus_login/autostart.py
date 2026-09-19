@@ -77,6 +77,23 @@ def working_directory_for(launch_args: Sequence[str]) -> str:
     return str(Path(args[0]).resolve().parent)
 
 
+def commands_match(recorded: str, expected: Sequence[str]) -> bool:
+    """比较“开机启动项里记录的命令”和“当前程序实际的启动命令”是否一致。
+
+    用于检测用户把程序文件夹挪了地方（下载目录 → 桌面之类）导致启动项失效的情况。
+    只比较可执行文件和脚本路径，忽略大小写和多余参数。
+    """
+    left = [part.lower() for part in split_command_line(recorded or "")]
+    right = [part.lower() for part in expected or []]
+    if not left or not right:
+        return False
+    if left[0] != right[0]:
+        return False
+    if len(left) >= 2 and len(right) >= 2:
+        return left[1] == right[1]
+    return True
+
+
 def build_task_xml(
     *,
     task_name: str,

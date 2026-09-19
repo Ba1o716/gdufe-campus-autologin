@@ -6,7 +6,6 @@ Windows 上的**开机自动登录校园网**小工具。开机后它会：
 2. 判断现在是不是还需要网页认证（已认证就什么都不做）；
 3. 需要认证就用你自己保存的账号自动完成认证；
 4. 之后常驻托盘，掉线 / 过期时自动重新登录。
-5. 笔记本电脑在未接通电源情况下程序图标不会出现在任务栏中，但程序依旧能正常在后台运行，接通电源后会自动刷新出图标
 
 已经按**佛山校区**的 ePortal 接口（`/eportal/portal/login`）配置好参数，选一下
 适配器、填一次学号密码就能用。其它学校也能用，见第 15 节（改适配器）。
@@ -22,28 +21,40 @@ Windows 上的**开机自动登录校园网**小工具。开机后它会：
 
 遇到问题可以加微信 **`zyffwazqs`**（备注「校园网」），或者在本仓库提 Issue —— 详见文末第 19 节。
 
-## 快速开始（3 步）
+## 快速开始
 
-**第 1 步：装 Python**
-到 [python.org](https://www.python.org/downloads/) 下载 Python 3.9 以上版本，
-安装时**务必勾选 `Add python.exe to PATH`**。
+### 路线 A：用打包好的版本（推荐，不用装 Python）
 
-**第 2 步：下载并运行**
-把本仓库下载到电脑（Code → Download ZIP，或 `git clone`），解压后**双击 `install.bat`**。
-它会自动装依赖、设置开机自动运行，并打开设置界面。
+1. **下载**：到本仓库的 **Releases** 页面下载最新的 `CampusLogin.zip`
+2. **解压**：右键 → 全部解压缩（**不要**直接在压缩包里双击 exe），解压到任意位置，
+   例如 `D:\CampusLogin`
+3. **打开**：进入解压后的文件夹，双击 **`CampusLogin.exe`**
+   → 右下角出现蓝色 Wi-Fi 托盘图标（可能被折叠在任务栏的 `^` 里）
+4. **填账号密码**：右键托盘图标 → **设置** → 「认证适配器」选
+   **广东财经大学佛山校区（ePortal 认证）** → 填学号和密码 → 点「保存」
+   （密码存进 Windows 凭据管理器，不会写进任何文件）
+5. **⭐ 开启开机自动运行**：在同一个设置窗口里勾选 **「开机自动运行」**，再点一次「保存」
 
-**第 3 步：填账号密码**
-在设置界面里：
+> ⚠️ **不做第 5 步，重启电脑后它不会自己启动**——这是"装好了但开机不自动登录"最常见的原因。
+> 第一次双击 `CampusLogin.exe` 时程序也会弹窗问你要不要开启，选「是」就行。
 
-1. 「认证适配器」选 **广东财经大学佛山校区（ePortal 认证）**；
-2. 「校园网账号」填学号，「校园网密码」填密码（密码会存进 Windows 凭据管理器，不会写进任何文件）；
-3. 点「保存」。
+### 路线 B：用源码运行
 
-这样就完成了。右下角托盘会出现蓝色 Wi-Fi 图标，之后开机就会自动登录。
-想先测一下：`python campus_login_main.py --login`，然后看日志。
+1. 到 [python.org](https://www.python.org/downloads/) 下载 Python 3.9 以上版本，
+   安装时**务必勾选 `Add python.exe to PATH`**；
+2. 把本仓库下载到电脑（Code → Download ZIP 或 `git clone`），解压后**双击 `install.bat`**
+   —— 它会自动装依赖、**设置开机自动运行**、并打开设置界面；
+3. 在设置界面里选「认证适配器」= 广东财经大学佛山校区，填学号密码，点「保存」。
 
-> 不想装 Python 也能用：双击 `build_exe.bat` 打包出 `dist\CampusLogin\` 文件夹（里面是
-> `CampusLogin.exe`，双击即可用）。打包需要一个能联网的环境装 PyInstaller。
+> 想自己打包成 exe 发给别人：见第 4.2 节（双击 `build_exe.bat` 即可）。
+
+### 做完之后怎么确认
+
+```powershell
+CampusLoginCLI.exe --status      # 应显示：开机自动运行：已开启
+```
+
+或者右键托盘图标 → 看菜单里的「开机自动运行」是否打了勾。
 
 ---
 
@@ -57,7 +68,7 @@ Windows 上的**开机自动登录校园网**小工具。开机后它会：
 | 开机自动运行（任务计划程序 + 注册表双通道） | ✅ 已完成，幂等（重复安装不会产生两个启动项） |
 | 系统托盘 + 设置界面（tkinter） | ✅ 已完成（托盘不可用时自动降级为后台运行） |
 | 命令行（--status / --login / --install / --discover / --selftest ...） | ✅ 已完成 |
-| 自动化测试 195 项 | ✅ 全部通过（`run_tests.bat`） |
+| 自动化测试 210 项 | ✅ 全部通过（`run_tests.bat`） |
 | 离线自检 14 项场景 | ✅ 全部通过（`--selftest`，不联网、不需要密码） |
 | **广东财经大学佛山校区接口** | ✅ 已按实测抓包配置好（见第 18 节） |
 | 打包成 exe（文件夹模式） | ✅ 脚本已就绪（`build_exe.bat` → `dist\CampusLogin\` 文件夹 + 自动打包 zip） |
@@ -141,7 +152,7 @@ CampusLogin/
 │   ├── devserver.py             本机"假校园网门户"（自检/测试用）
 │   └── simulation.py            模拟网络（离线测试用）
 │   └── assets/                  托盘图标（tray.ico）与预览图
-├── tests/                       195 项自动化测试（unittest，不需要联网）
+├── tests/                       210 项自动化测试（unittest，不需要联网）
 ├── tools/make_icon.py           重新生成图标（可选，需要 Pillow）
 ├── .github/workflows/tests.yml  GitHub Actions：推送时自动跑测试
 ├── LICENSE                      MIT 许可证
@@ -284,6 +295,7 @@ python -m PyInstaller --clean --noconfirm --onefile --windowed --name CampusLogi
 
 * 从源码方式换成打包好的 `CampusLogin.exe`（或反过来）之后，
 * 或者移动了程序文件夹之后，
+* 或者装过好几个版本、留下了旧的启动项之后，
 
 都需要重新执行一次安装，让启动项指向新位置（**幂等**，不会产生第二条）：
 
@@ -292,6 +304,19 @@ cd <程序所在目录>
 CampusLoginCLI.exe --install        # 打包版
 python campus_login_main.py --install   # 源码版
 ```
+
+**怎么确认启动项指向的是哪儿**（新版程序启动时会自动检测并修复，但手工确认也可以）：
+
+```powershell
+schtasks /Query /TN CampusLogin /XML | Select-String 'Command|Arguments'
+reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v CampusLogin
+```
+
+输出的路径应该正好是你**当前**放程序的文件夹。如果指向别的目录（旧版本 / 旧位置），
+执行一次上面的 `--install` 就会覆盖成正确路径。
+
+> 建议顺手清理：如果以前在多处放过副本（下载目录一份、桌面一份），**只留一个文件夹**，
+> 在它里面重新 `--install`，然后把其它副本删掉，避免以后搞不清哪个在跑。
 ---
 
 ## 5. 首次配置
@@ -655,6 +680,7 @@ python campus_login_main.py --tray       # 启动托盘后台（等价于不带�
 | 拔掉电源后程序消失了 | 任务计划程序默认"切换到电池时停止任务" | 同上，重新 `--install` 覆盖任务配置 |
 | 合盖唤醒后程序没在跑 | "登录时触发"不会在唤醒时触发 | 新版任务带"解锁触发 + 每 5 分钟自愈检查"，重新 `--install` 即可 |
 | 双击程序"没反应" | 程序已经在后台运行（单实例） | 正常现象：会弹一个气泡提示，托盘图标可能在 `^` 里 |
+| **重启后没有自动启动**，但托盘菜单里「开机自动运行」是打勾的 | 打勾只代表"启动项存在"，**不代表路径还是对的**：如果之前装过别的版本、或把程序文件夹挪过位置（下载目录 → 桌面），启动项会指向已经不存在的旧路径 | 在当前文件夹里重新执行一次安装，让它指向新位置（幂等）：<br>`CampusLoginCLI.exe --install`<br>新版程序每次启动会自动检测并修复这个问题 |
 | 日志目录/配置文件写不进去 | 权限异常、磁盘满、安全软件拦截 | 程序会自动改用其它可用目录，不会因此启动失败 |
 | `无法显示托盘图标` 弹窗 | 当前会话没有桌面 Shell | 程序会退化为后台运行，功能不受影响，用 `--status` / 日志查看 |
 | `--status` 提示"检测到代理/VPN 虚拟网卡" | 开着 Clash / FlClash 等 **TUN 模式**代理 | 认证期间建议关闭它；或在代理里给 `100.64.0.0/10`、`172.31.0.0/16` 加 `DIRECT` 规则 |
@@ -758,7 +784,7 @@ JS 运行时（例如用 WebAssembly/加密脚本生成 Token）时，才考虑�
 不需要联网、不需要真实账号，全部用本机模拟校园网门户（`campus_login/devserver.py`）：
 
 ```powershell
-python -m unittest discover -s tests -t .   # 195 项测试
+python -m unittest discover -s tests -t .   # 210 项测试
 python campus_login_main.py --selftest      # 20 秒内跑完的离线自检（11 项场景）
 ```
 
@@ -830,3 +856,5 @@ CampusLoginCLI.exe --tail 50       # 最近 50 行日志
 ```
 
 日志文件位置：`%APPDATA%\CampusLogin\logs\app.log`（里面不会有你的密码）。
+
+

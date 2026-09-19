@@ -12,7 +12,7 @@ import threading
 import webbrowser
 
 from .adapters import BaseAdapter, create_adapter
-from .autostart import AutostartError, AutostartManager
+from .autostart import AutostartError, AutostartManager, commands_match
 from .config import Config, load_config, save_config
 from .credentials import Credential, create_store, save_credential
 from .logging_setup import get_logger, redactor, setup_logging
@@ -65,6 +65,34 @@ def message_box(title: str, text: str, error: bool = False, timeout_ms: int = 15
         user32.MessageBoxW(None, text, title, flags)
     except Exception:
         print(f"{title}: {text}")
+
+
+def ask_yes_no(title: str, text: str, timeout_ms: int = 20000) -> bool:
+    """是/否对话框（带超时，没人点也不会卡住程序）。只有明确点“是”才返回 True。"""
+    if os.name != "nt":
+        return False
+    MB_YESNO = 0x00000004
+    MB_ICONQUESTION = 0x00000020
+    MB_SETFOREGROUND = 0x00010000
+    IDYES = 6
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        flags = MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND
+        try:
+            func = user32.MessageBoxTimeoutW
+            func.argtypes = [
+                ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_wchar_p,
+                ctypes.c_uint, ctypes.c_ushort, ctypes.c_uint,
+            ]
+            func.restype = ctypes.c_int
+            return func(None, text, title, flags, 0, int(timeout_ms)) == IDYES
+        except AttributeError:
+            user32.MessageBoxW.argtypes = [
+                ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint
+            ]
+            return user32.MessageBoxW(None, text, title, flags) == IDYES
+    except Exception:
+        return False
 
 
 class CommandSleeper:
@@ -219,6 +247,72 @@ class Application:
             self._thread.join(timeout=3.0)
 
     # ------------------------------------------------------------------
+    # 开机自动运行：首次询问 + 位置变化自愈
+    # ------------------------------------------------------------------
+    def _should_ask_autostart(self) -> bool:
+        """是否需要询问用户“要不要开启开机自动运行”。"""
+        if self.config.autostart_prompted or self.config.auto_start_on_boot:
+            return False
+        try:
+            return not self.autostart.is_installed()
+        except Exception:
+            return False
+
+    def maybe_ask_autostart(self) -> bool:
+        """第一次运行时问一次。返回最终是否开启了开机自动运行。"""
+        if not self._should_ask_autostart():
+            return False
+        answer = ask_yes_no(
+            "校园网自动登录",
+            "要让它在每次开机后自动帮你登录校园网吗？\n\n"
+            "选「是」：现在就设置开机自动运行（不需要管理员权限，之后随时能在托盘菜单里关掉）\n"
+            "选「否」：只在你手动打开时才工作",
+        )
+        self.config.autostart_prompted = True
+        opened = False
+        if answer:
+            try:
+                self.autostart.install()
+                self.config.auto_start_on_boot = True
+                opened = True
+                self.log.info("用户已同意开启开机自动运行")
+            except Exception as exc:
+                self.log.warning("开启开机自动运行失败：%s", type(exc).__name__)
+        try:
+            save_config(self.config)
+        except Exception:
+            pass
+        if self.tray:
+            self.tray.set_tooltip(
+                "校园网自动登录 - 已开启开机自动运行"
+                if opened
+                else "校园网自动登录 - 未开启开机自动运行"
+            )
+        return opened
+
+    def sync_autostart_path(self) -> bool:
+        """程序文件夹被移动过（例如从下载目录挪到桌面）时，自动更新开机启动项。"""
+        if not self.config.auto_start_on_boot:
+            return False
+        try:
+            if not self.autostart.is_installed():
+                return False
+            recorded = self.autostart.active_backend().current_command()
+        except Exception:
+            return False
+        if not recorded:
+            return False   # 查不到就什么都不做，避免误操作
+        if commands_match(recorded, launch_args(("--tray",))):
+            return False
+        try:
+            self.autostart.install()
+            self.log.info("检测到程序位置变化，已自动把开机启动项更新为新位置")
+            return True
+        except Exception as exc:
+            self.log.warning("更新开机启动项失败：%s", type(exc).__name__)
+            return False
+
+    # ------------------------------------------------------------------
     # 托盘菜单
     # ------------------------------------------------------------------
     def menu_items(self) -> list[MenuItem]:
@@ -360,6 +454,10 @@ class Application:
                 on_command=self.on_tray_command,
             )
             self.start_service()
+            # ① 程序文件夹被移动过时，自动把开机启动项指向新位置
+            self.sync_autostart_path()
+            # ② 第一次运行时问一次“要不要开机自动运行”（由启动项拉起的进程不会问）
+            self.maybe_ask_autostart()
             self.tray.run()
         except Exception as exc:
             self.log.error("系统托盘启动失败：%s", exc)
